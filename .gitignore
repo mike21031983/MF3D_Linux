@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+artifacts/
+*.dmg
+*.exe
+*.hex
+*.img
+*.zip
+*.mfs
+research/macho_symbols.txt
