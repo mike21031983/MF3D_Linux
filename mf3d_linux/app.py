@@ -1,15 +1,16 @@
 """Native Linux GUI for MIDI Fighter 3D. Live MIDI only; no EEPROM/DFU SysEx."""
 import tkinter as tk
-from tkinter import ttk,messagebox
+from tkinter import ttk,messagebox,filedialog
 from . import protocol as p
 from .midi_backend import MidiBackend
 from .profile_editor import ProfileEditor
 from .vendor_sysex import parse_sysex
+from .mfs_container import MfsContainer
 
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP02')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP03')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -74,6 +75,7 @@ class App:
         ttk.Button(right,text='Снять цветовой override',command=self.clear_color).pack(fill='x')
         ttk.Button(host,text='Редактор настроек и подсветки — локальный профиль (без записи в устройство)',
                    command=lambda:ProfileEditor(self.root)).pack(fill='x',pady=8)
+        ttk.Button(host,text='Открыть профиль .mfs — только чтение',command=self.inspect_mfs).pack(fill='x',pady=6)
         ch=ttk.Frame(host)
         ch.pack(fill='x',pady=5)
         ttk.Label(ch,text='Нотный MIDI-канал 0..15:').pack(side='left')
@@ -99,6 +101,23 @@ class App:
             self.log.delete('1.0','15.0')
         self.log.see('end')
         self.log.configure(state='disabled')
+    def inspect_mfs(self):
+        file=filedialog.askopenfilename(parent=self.root,
+            title='Оригинальный профиль MIDI Fighter Utility',
+            filetypes=[('MIDI Fighter profile','*.mfs'),('Все файлы','*')])
+        if not file:return
+        try:description=MfsContainer.from_path(file).describe()
+        except (ValueError,OSError) as error:
+            messagebox.showerror('Профиль .mfs',str(error),parent=self.root)
+            return
+        window=tk.Toplevel(self.root)
+        window.title('Профиль .mfs — просмотр без изменений')
+        window.geometry('690x390')
+        view=tk.Text(window,wrap='word')
+        view.pack(fill='both',expand=True,padx=12,pady=12)
+        view.insert('1.0',description)
+        view.configure(state='disabled')
+
     def refresh(self):
         ins,outs,err=self.midi.available()
         self.ins['values']=ins
