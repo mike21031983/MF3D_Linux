@@ -3,11 +3,13 @@ import tkinter as tk
 from tkinter import ttk,messagebox
 from . import protocol as p
 from .midi_backend import MidiBackend
+from .profile_editor import ProfileEditor
+from .vendor_sysex import parse_sysex
 
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP01')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP02')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -70,6 +72,8 @@ class App:
         self.ani.pack(fill='x')
         ttk.Button(right,text='Применить анимацию',command=self.send_animation).pack(fill='x',pady=8)
         ttk.Button(right,text='Снять цветовой override',command=self.clear_color).pack(fill='x')
+        ttk.Button(host,text='Редактор настроек и подсветки — локальный профиль (без записи в устройство)',
+                   command=lambda:ProfileEditor(self.root)).pack(fill='x',pady=8)
         ch=ttk.Frame(host)
         ch.pack(fill='x',pady=5)
         ttk.Label(ch,text='Нотный MIDI-канал 0..15:').pack(side='left')
@@ -136,6 +140,10 @@ class App:
         try:
             for m in self.midi.poll():
                 self.record('IN: '+p.describe_incoming(m,self.bank,self.note_ch.get(),self.aux_ch.get()))
+                if m.type=='sysex':
+                    info=parse_sysex(m)
+                    self.record('SYSEx: '+info.category+' / '+str(len(info.data))+' байт')
+                    continue
                 if m.type=='note_on' and m.channel==self.aux_ch.get() and m.note in range(4) and m.velocity:
                     self.bank=m.note
                     self.repaint()
