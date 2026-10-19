@@ -19,11 +19,11 @@ class Setting:
     tag:int
     kind:str
     default:int
-    low:int=0
-    high:int=127
+    minimum:int=0
+    maximum:int=127
     options:tuple=()
-    offset:int=0
-    width:int=7
+    bit_offset:int=0
+    bit_width:int=7
     label:str=''
 
 SETTINGS=(
@@ -34,13 +34,13 @@ SETTINGS=(
     Setting('sleep_timer','settings',22,'int',60,0,120,label='Sleep Timer'),
     Setting('bank_buttons','settings',3,'enum',0,options=('Four Banks Enabled','Disabled Hold','Disabled Toggle'),label='Bank Buttons'),
     Setting('bank_side_buttons','settings',23,'bool',1,label='Bank Side Buttons'),
-    Setting('motion_animation','settings',10,'bitflag',3,0,3,options=('Button Pitch','Edge Tilt'),offset=1,width=2,label='Motion animation'),
-    Setting('button_animation','settings',10,'enum',3,0,5,options=('Square','Circle','Star','Triangle','Spark','None'),offset=3,width=3,label='Button animation'),
+    Setting('motion_animation','settings',10,'bitflag',3,0,3,options=('Button Pitch','Edge Tilt'),bit_offset=1,bit_width=2,label='Motion animation'),
+    Setting('button_animation','settings',10,'enum',3,0,5,options=('Square','Circle','Star','Triangle','Spark','None'),bit_offset=3,bit_width=3,label='Button animation'),
     Setting('rotation','motion',11,'enum',1,options=('Disabled','Relative','Absolute','ENC 3FH/41H'),label='Rotation'),
     Setting('pickup_sensitivity','motion',21,'percent',127,label='Pickup Sensitivity'),
     Setting('rotation_range','motion',17,'int',60,15,90,label='Rotation Range (deg)'),
-    Setting('tilt_directions','motion',12,'bitflag',15,0,15,options=('Left','Front','Right','Back'),width=4,label='Tilt Directions'),
-    Setting('join_tilt','motion',20,'bitflag',0,0,3,options=('On X','On Y'),width=2,label='Join Tilt CCs'),
+    Setting('tilt_directions','motion',12,'bitflag',15,0,15,options=('Left','Front','Right','Back'),bit_width=4,label='Tilt Directions'),
+    Setting('join_tilt','motion',20,'bitflag',0,0,3,options=('On X','On Y'),bit_width=2,label='Join Tilt CCs'),
     Setting('tilt_dead_zone','motion',18,'int',12,1,30,label='Tilt Dead Zone'),
     Setting('tilt_range','motion',16,'int',70,15,85,label='Tilt Range'),
     Setting('tilt_sensitivity','motion',14,'percent',127,label='Tilt Sensitivity'),
@@ -64,7 +64,7 @@ class Profile:
         if set(self.settings)!=set(BY_KEY):raise ValueError('Settings keys invalid')
         for name,n in self.settings.items():
             s=BY_KEY[name]
-            if type(n) is not int or not s.low<=n<=s.high:raise ValueError(name)
+            if type(n) is not int or not s.minimum<=n<=s.maximum:raise ValueError(name)
             if s.kind=='enum' and n>=len(s.options):raise ValueError(name)
         if type(self.animation_reserved) is not int or not 0<=self.animation_reserved<=255:
             raise ValueError('Reserved value invalid')
@@ -87,6 +87,14 @@ class Profile:
         return ((self.animation_reserved&~0x3E) |
                 ((self.settings['motion_animation']&3)<<1) |
                 ((self.settings['button_animation']&7)<<3))
+    def set_tag10(self,val):
+        if type(val) is not int or not 0<=val<=255:raise ValueError('Invalid tag byte')
+        motion=(val>>1)&3
+        button=(val>>3)&7
+        if button>=6:raise ValueError('Unknown animation code')
+        self.animation_reserved=val & ~0x3E
+        self.settings['motion_animation']=motion
+        self.settings['button_animation']=button
     def as_dict(self):
         self.validate()
         return {'format':FORMAT,'device':'MIDI Fighter 3D','family':'0003','model':'0001',
