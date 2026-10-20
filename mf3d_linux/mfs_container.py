@@ -62,5 +62,25 @@ class MfsContainer:
                 'Цвета нажатых кнопок' if (r.tag,r.kind)==(2,1) else
                 'Неизвестный/общий блок')
             lines.append(f'Блок {n}: tag={r.tag}, type={r.kind}, length={len(r.payload)} — {title}')
+        # Original offline importer feeds serializer bytes to ConfigWidget::sysEx
+        # with import flag set. Decode 02 01 directly, without synthesizing a SysEx.
+        try:
+            from .serializer_capture import decode_serializer_body
+            from .device_profile import BY_KEY
+            decoded=decode_serializer_body(self.serializer)
+        except (ValueError,TypeError):
+            lines.append('Сериализатор: заголовок 02 01 не распознан или пары повреждены; байты сохранены')
+        else:
+            lines.append('Основные параметры 02 01: '+str(len(decoded.pairs))+
+                         ' пар (полнота не подтверждена)')
+            for tag,value in decoded.pairs:
+                names=', '.join(s.key for s in BY_KEY.values() if s.tag==tag)
+                lines.append(f'  tag {tag}: значение {value}'+
+                             (f' — {names}' if names else ' — неизвестный параметр'))
+        for record in self.records:
+            if record.tag in (1,2) and record.kind==1:
+                lines.append(f'RGB7 block {record.tag}: '+(
+                    '192 байта (ожидаемый размер)' if len(record.payload)==192
+                    else f'НЕОЖИДАННЫЙ размер {len(record.payload)} (ожидалось 192)'))
         lines.append('Внимание: синтетические проверки пройдены, но реальный .mfs ещё не предоставлен.')
         return '\n'.join(lines)
