@@ -30,6 +30,27 @@ def decode_serializer_body(body):
         raise ValueError('Serializer data must be complete 7-bit tag/value pairs')
     return SerializerFrame(tuple(zip(raw[2::2],raw[3::2])))
 
+
+def decode_mfs_serializer(raw:bytes)->SerializerFrame:
+    """On-disk MidiSerializer::dump() is raw tag/value pairs, NO 02 01 prefix.
+    Original importer prepends 02 01 in memory before calling the SysEx handler.
+    """
+    if not isinstance(raw,bytes) or len(raw)<2 or len(raw)>MAX_PAIRS_PER_FRAME*2 or len(raw)%2:
+        raise ValueError('Expected 1..128 raw MFS tag/value pairs')
+    if any(b>127 for b in raw):raise ValueError('MFS serializer contains non-7-bit data')
+    return SerializerFrame(tuple(zip(raw[::2],raw[1::2])))
+
+def encode_mfs_serializer(pairs)->bytes:
+    """Only for offline file transformations, NEVER send to hardware."""
+    output=bytearray()
+    for key,value in pairs:
+        if type(key) is not int or type(value) is not int or not 0<=key<=127 or not 0<=value<=127:
+            raise ValueError('Invalid serializer tag/value')
+        output.extend((key,value))
+        if len(output)>MAX_PAIRS_PER_FRAME*2:raise ValueError('Too many serializer pairs')
+    if not output:raise ValueError('Empty serializer')
+    return bytes(output)
+
 def decode_serializer_reply(message):
     pkt=parse_sysex(message)
     if not pkt.valid_vendor or pkt.category!='serial-response':return None
