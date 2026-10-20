@@ -43,3 +43,13 @@ class MidiBackend:
     def send(self,command):
         if not self.output:raise RuntimeError('Контроллер MIDI не подключён')
         self.output.send(command.to_mido())
+
+    def send_color_read_request(self,tag):
+        """Explicit vendor BULK READ only; no EEPROM/DFU/reset/write."""
+        from .bulk_read import build_bulk_read_request
+        if self.output is None or self.mido is None:
+            raise RuntimeError('USB-MIDI output not connected')
+        if not self.output_name or 'midi fighter' not in self.output_name.casefold():
+            raise RuntimeError('Read-only SysEx requires an identified MIDI Fighter output')
+        frame=build_bulk_read_request(tag)
+        self.output.send(self.mido.Message('sysex',data=frame[1:-1]))
