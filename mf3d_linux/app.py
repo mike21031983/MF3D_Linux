@@ -15,7 +15,7 @@ from .serializer_capture import PassiveSerializerCapture
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP08')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP09')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
