@@ -15,7 +15,7 @@ from .serializer_capture import PassiveSerializerCapture
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP07')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP08')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -31,6 +31,7 @@ class App:
         self.last_color_snapshot=None
         self.config_capture=None
         self.config_deadline=None
+        self.identity_deadline=None
         self.build()
         self.refresh()
         self.root.after(70,self.poll)
@@ -50,6 +51,7 @@ class App:
         self.outs.grid(row=1,column=1,sticky='ew')
         ttk.Button(conn,text='Обновить',command=self.refresh).grid(row=0,column=2,padx=5)
         ttk.Button(conn,text='Подключить',command=self.connect).grid(row=1,column=2,padx=5)
+        ttk.Button(conn,text='Определить модель (без записи)',command=self.identify).grid(row=2,column=1,sticky='ew',padx=3,pady=3)
         conn.columnconfigure(1,weight=1)
         body=ttk.Frame(host)
         body.pack(fill='both',expand=True)
@@ -139,6 +141,19 @@ class App:
         view.pack(fill='both',expand=True,padx=12,pady=12)
         view.insert('1.0',description)
         view.configure(state='disabled')
+
+    def identify(self):
+        if self.identity_deadline is not None:
+            self.status.set('Идентификация уже выполняется');return
+        try:self.midi.request_identity()
+        except Exception as e:
+            self.status.set('Идентификация не запущена: '+str(e));return
+        self.identity_deadline=time.monotonic()+3.0
+        self.read_session=None
+        self.config_capture=None
+        self.config_deadline=None
+        self.last_color_snapshot=None
+        self.status.set('Запрос модели 05 отправлен, ожидается 05 01')
 
     def read_colors(self):
         if self.read_session is not None and self.read_session.state=='reading':
@@ -232,7 +247,12 @@ class App:
     def connect(self):
         try:
             self.midi.connect(self.input_name.get(),self.output_name.get())
-            self.status.set('Подключено: '+self.midi.input_name)
+            self.identity_deadline=None
+            self.read_session=None
+            self.config_capture=None
+            self.config_deadline=None
+            self.last_color_snapshot=None
+            self.status.set('Подключено: '+self.midi.input_name+'; требуется определение модели')
             self.record('MIDI-порты открыты')
         except Exception as e:
             self.status.set(str(e))
@@ -263,6 +283,19 @@ class App:
             for m in self.midi.poll():
                 self.record('IN: '+p.describe_incoming(m,self.bank,self.note_ch.get(),self.aux_ch.get()))
                 if m.type=='sysex':
+                    if self.identity_deadline is not None:
+                        try: ident=self.midi.observe_identity(m)
+                        except ValueError as e:
+                            self.midi.expire_identity()
+                            self.identity_deadline=None
+                            self.status.set('Ошибка ответа модели: '+str(e))
+                            ident=None
+                        if ident is not None:
+                            self.identity_deadline=None
+                            if ident.is_standard_mf3d:
+                                self.status.set('Подтверждён MF3D '+ident.family_code+':'+ident.model_number)
+                            else:
+                                self.status.set('Другая модель '+ident.family_code+':'+ident.model_number+'; чтение заблокировано')
                     info=parse_sysex(m)
                     self.record('SYSEx: '+info.category+' / '+str(len(info.data))+' байт')
                     if self.config_deadline is not None and self.config_capture is not None:
@@ -295,6 +328,10 @@ class App:
                         self.pad=idx
                         self.repaint()
         except Exception as e:self.status.set('MIDI poll: '+str(e))
+        if self.identity_deadline is not None and time.monotonic()>=self.identity_deadline:
+            self.identity_deadline=None
+            self.midi.expire_identity()
+            self.status.set('Тайм-аут 05 01: модель не подтверждена, чтение запрещено')
         if self.config_deadline is not None and time.monotonic()>=self.config_deadline:
             self.config_deadline=None
             if self.config_capture is not None and self.config_capture.frames:
