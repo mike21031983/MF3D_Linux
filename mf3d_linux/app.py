@@ -8,13 +8,14 @@ from .midi_backend import MidiBackend
 from .profile_editor import ProfileEditor
 from .vendor_sysex import parse_sysex
 from .mfs_container import MfsContainer
+from .mfs_backup import backup as mfs_backup, restore as mfs_restore
 from .color_read_session import ColorReadSession
 from .serializer_capture import PassiveSerializerCapture
 
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP06')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP07')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -94,6 +95,9 @@ class App:
                    command=self.read_main_config).pack(side='left',padx=3)
         ttk.Button(configbar,text='Экспорт наблюдений JSON…',
                    command=self.export_main_config).pack(side='left',padx=3)
+        mfsbar=ttk.Frame(host);mfsbar.pack(fill='x',pady=2)
+        ttk.Button(mfsbar,text='.mfs → резервный JSON',command=self.backup_mfs).pack(side='left',padx=3)
+        ttk.Button(mfsbar,text='Резервный JSON → .mfs (новый файл)',command=self.restore_mfs).pack(side='left',padx=3)
         ch=ttk.Frame(host)
         ch.pack(fill='x',pady=5)
         ttk.Label(ch,text='Нотный MIDI-канал 0..15:').pack(side='left')
@@ -190,6 +194,32 @@ class App:
             self.status.set('Сохранены НЕПОЛНЫЕ наблюдения: '+path)
         except OSError as e:
             self.status.set('Ошибка экспорта: '+str(e))
+
+    def backup_mfs(self):
+        src=filedialog.askopenfilename(parent=self.root,title='Оригинальный профиль MIDI Fighter',
+                filetypes=[('MIDI Fighter profile','*.mfs'),('Все файлы','*')])
+        if not src:return
+        dst=filedialog.asksaveasfilename(parent=self.root,defaultextension='.json',
+                initialfile='MF3D_MFS_backup.json',filetypes=[('JSON','*.json')])
+        if not dst:return
+        try:
+            mfs_backup(src,dst)  # exclusive-create, cannot overwrite
+            self.status.set('Создана точная резервная копия .mfs')
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Копирование .mfs',str(exc),parent=self.root)
+
+    def restore_mfs(self):
+        src=filedialog.askopenfilename(parent=self.root,title='Резервный JSON',
+                filetypes=[('JSON','*.json')])
+        if not src:return
+        dst=filedialog.asksaveasfilename(parent=self.root,defaultextension='.mfs',
+                initialfile='MF3D_restored.mfs',filetypes=[('MIDI Fighter profile','*.mfs')])
+        if not dst:return
+        try:
+            mfs_restore(src,dst)
+            self.status.set('Профиль .mfs восстановлен побайтно в новый файл')
+        except (OSError,ValueError) as exc:
+            messagebox.showerror('Восстановление .mfs',str(exc),parent=self.root)
 
     def refresh(self):
         ins,outs,err=self.midi.available()
