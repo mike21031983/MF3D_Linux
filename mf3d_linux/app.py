@@ -14,7 +14,7 @@ from .serializer_capture import PassiveSerializerCapture
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP05')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP06')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -239,7 +239,7 @@ class App:
                         try:
                             if self.config_capture.feed(m):
                                 self.status.set('Получено '+str(len(self.config_capture.values))+
-                                    ' параметров; полнота не подтверждена')
+                                    ' параметров последнего ответа; полнота не подтверждена')
                         except ValueError as ex:
                             self.config_deadline=None
                             self.status.set('Некорректный ответ 02 01: '+str(ex))
@@ -269,7 +269,7 @@ class App:
             self.config_deadline=None
             if self.config_capture is not None and self.config_capture.frames:
                 self.status.set('Основные параметры: '+str(len(self.config_capture.values))+
-                    ' наблюдений, ПОЛНОТА НЕ ПОДТВЕРЖДЕНА')
+                    ' параметров последнего ответа, ПОЛНОТА НЕ ПОДТВЕРЖДЕНА')
             else:
                 self.status.set('Тайм-аут ответа 02 01; настройки не получены')
         if self.read_session is not None and self.read_session.expire(time.monotonic()):
