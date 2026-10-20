@@ -53,3 +53,13 @@ class MidiBackend:
             raise RuntimeError('Read-only SysEx requires an identified MIDI Fighter output')
         frame=build_bulk_read_request(tag)
         self.output.send(self.mido.Message('sysex',data=frame[1:-1]))
+
+    def send_main_config_read_request(self):
+        """Explicit vendor main-config READ only. No settings writes or flashing."""
+        from .config_read import build_main_config_read_request
+        if self.output is None or self.mido is None:
+            raise RuntimeError('USB-MIDI output not connected')
+        if not self.output_name or 'midi fighter' not in self.output_name.casefold():
+            raise RuntimeError('Config read requires an identified MIDI Fighter output')
+        frame=build_main_config_read_request()
+        self.output.send(self.mido.Message('sysex',data=frame[1:-1]))
