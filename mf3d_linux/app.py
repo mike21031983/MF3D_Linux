@@ -11,11 +11,15 @@ from .mfs_container import MfsContainer
 from .mfs_backup import backup as mfs_backup, restore as mfs_restore
 from .color_read_session import ColorReadSession
 from .serializer_capture import PassiveSerializerCapture
+from .read_audit import AuditSession
+from .device_identity import identity_request
+from .config_read import build_main_config_read_request
+from .bulk_read import build_bulk_read_request
 
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP09')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP10')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -32,6 +36,7 @@ class App:
         self.config_capture=None
         self.config_deadline=None
         self.identity_deadline=None
+        self.audit=None
         self.build()
         self.refresh()
         self.root.after(70,self.poll)
@@ -100,6 +105,11 @@ class App:
         mfsbar=ttk.Frame(host);mfsbar.pack(fill='x',pady=2)
         ttk.Button(mfsbar,text='.mfs → резервный JSON',command=self.backup_mfs).pack(side='left',padx=3)
         ttk.Button(mfsbar,text='Резервный JSON → .mfs (новый файл)',command=self.restore_mfs).pack(side='left',padx=3)
+        auditbar=ttk.Frame(host);auditbar.pack(fill='x',pady=4)
+        ttk.Button(auditbar,text='Единое чтение: модель + параметры + RGB',
+                   command=self.start_audit).pack(side='left',padx=3)
+        ttk.Button(auditbar,text='Отчёт JSON…',command=self.export_audit).pack(side='left',padx=3)
+        ttk.Button(auditbar,text='Сырая MIDI-трасса…',command=self.export_audit_trace).pack(side='left',padx=3)
         ch=ttk.Frame(host)
         ch.pack(fill='x',pady=5)
         ttk.Label(ch,text='Нотный MIDI-канал 0..15:').pack(side='left')
@@ -142,7 +152,56 @@ class App:
         view.insert('1.0',description)
         view.configure(state='disabled')
 
+    def _send_audit_request(self,frame):
+        if frame==identity_request():self.midi.request_identity()
+        elif frame==build_main_config_read_request():self.midi.send_main_config_read_request()
+        elif frame==build_bulk_read_request(1):self.midi.send_color_read_request(1)
+        elif frame==build_bulk_read_request(2):self.midi.send_color_read_request(2)
+        else:raise ValueError('Disallowed audit command')
+
+    def start_audit(self):
+        if self.audit is not None and self.audit.running:
+            self.status.set('Комплексное чтение уже выполняется');return
+        if (self.identity_deadline is not None or self.config_deadline is not None or
+            (self.read_session is not None and self.read_session.state=='reading')):
+            self.status.set('Сначала завершите другое чтение');return
+        session=AuditSession()
+        try:self._send_audit_request(session.begin(time.monotonic()))
+        except Exception as error:
+            self.status.set('Комплексное чтение не запущено: '+str(error));return
+        self.audit=session
+        self.last_color_snapshot=None;self.config_capture=None
+        self.status.set('Комплексное чтение: идентификация, без записи')
+
+    def export_audit(self):
+        if self.audit is None or self.audit.running or self.audit.phase=='idle':
+            self.status.set('Нет завершённого диагностического сеанса');return
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.json',
+            initialfile='MF3D_read_audit.json',filetypes=[('JSON','*.json')])
+        if not path:return
+        try:self.audit.save_report(path)
+        except (OSError,ValueError,RuntimeError) as error:
+            messagebox.showerror('Отчёт MF3D',str(error),parent=self.root)
+        else:self.status.set('Отчёт сохранён в новый JSON без серийного номера')
+
+    def export_audit_trace(self):
+        if self.audit is None or self.audit.phase=='idle':
+            self.status.set('Нет диагностического сеанса');return
+        if not messagebox.askyesno('Приватность SysEx',
+            'Сырые сообщения могут содержать уникальный идентификатор устройства. '
+            'Сохранить локально? Не публикуйте файл в GitHub.',parent=self.root):
+            return
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.json',
+            initialfile='MF3D_PRIVATE_MIDI_trace.json',filetypes=[('JSON','*.json')])
+        if not path:return
+        try:self.audit.save_trace(path)
+        except (OSError,ValueError,RuntimeError) as error:
+            messagebox.showerror('Трасса MF3D',str(error),parent=self.root)
+        else:self.status.set('Приватная MIDI-трасса сохранена локально')
+
     def identify(self):
+        if self.audit is not None and self.audit.running:
+            self.status.set('Сначала завершите комплексное чтение');return
         if self.identity_deadline is not None:
             self.status.set('Идентификация уже выполняется');return
         try:self.midi.request_identity()
@@ -156,6 +215,8 @@ class App:
         self.status.set('Запрос модели 05 отправлен, ожидается 05 01')
 
     def read_colors(self):
+        if self.audit is not None and self.audit.running:
+            self.status.set('Сначала завершите комплексное чтение');return
         if self.read_session is not None and self.read_session.state=='reading':
             self.status.set('Чтение уже выполняется');return
         session=ColorReadSession()
@@ -184,6 +245,8 @@ class App:
         except OSError as ex:self.status.set('Ошибка сохранения: '+str(ex))
 
     def read_main_config(self):
+        if self.audit is not None and self.audit.running:
+            self.status.set('Сначала завершите комплексное чтение');return
         if self.config_deadline is not None:
             self.status.set('Чтение уже выполняется')
             return
@@ -248,6 +311,7 @@ class App:
         try:
             self.midi.connect(self.input_name.get(),self.output_name.get())
             self.identity_deadline=None
+            self.audit=None
             self.read_session=None
             self.config_capture=None
             self.config_deadline=None
@@ -283,6 +347,21 @@ class App:
             for m in self.midi.poll():
                 self.record('IN: '+p.describe_incoming(m,self.bank,self.note_ch.get(),self.aux_ch.get()))
                 if m.type=='sysex':
+                    if self.audit is not None and self.audit.running:
+                        try:
+                            if self.audit.phase=='identity':self.midi.observe_identity(m)
+                            query=self.audit.feed(m,time.monotonic())
+                            if query is not None:self._send_audit_request(query)
+                            if self.audit.phase=='finished':
+                                self.status.set('Считаны RGB; полнота основных настроек НЕ доказана')
+                            elif self.audit.phase=='failed':
+                                self.midi.expire_identity()
+                                self.status.set('Комплексное чтение остановлено: '+str(self.audit.error))
+                        except Exception as error:
+                            self.audit.fail(str(error))
+                            self.midi.expire_identity()
+                            self.status.set('Ошибка комплексного чтения: '+str(error))
+                        continue
                     if self.identity_deadline is not None:
                         try: ident=self.midi.observe_identity(m)
                         except ValueError as e:
@@ -328,6 +407,16 @@ class App:
                         self.pad=idx
                         self.repaint()
         except Exception as e:self.status.set('MIDI poll: '+str(e))
+        if self.audit is not None and self.audit.running:
+            try:
+                query=self.audit.tick(time.monotonic())
+                if query is not None:self._send_audit_request(query)
+                if self.audit.phase=='failed':
+                    self.midi.expire_identity()
+                    self.status.set('Комплексное чтение остановлено: '+str(self.audit.error))
+            except Exception as error:
+                self.audit.fail(str(error));self.midi.expire_identity()
+                self.status.set('Ошибка комплексного чтения: '+str(error))
         if self.identity_deadline is not None and time.monotonic()>=self.identity_deadline:
             self.identity_deadline=None
             self.midi.expire_identity()
