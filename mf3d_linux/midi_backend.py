@@ -1,4 +1,5 @@
 """Native Linux ALSA/RtMidi MIDI backend via mido/python-rtmidi."""
+from itertools import islice
 class MidiBackend:
     def __init__(self):
         self.input=None
@@ -43,7 +44,9 @@ class MidiBackend:
         self.identity_pending=False
     def poll(self,limit=128):
         if not self.input:return []
-        return list(self.input.iter_pending())[:limit]
+        if type(limit) is not int or not 1<=limit<=1024:
+            raise ValueError('poll limit must be 1..1024')
+        return list(islice(self.input.iter_pending(),limit))
     def send(self,command):
         if not self.output:raise RuntimeError('Контроллер MIDI не подключён')
         self.output.send(command.to_mido())
