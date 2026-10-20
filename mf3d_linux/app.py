@@ -1,16 +1,19 @@
 """Native Linux GUI for MIDI Fighter 3D. Live MIDI only; no EEPROM/DFU SysEx."""
 import tkinter as tk
+import time
+import json
 from tkinter import ttk,messagebox,filedialog
 from . import protocol as p
 from .midi_backend import MidiBackend
 from .profile_editor import ProfileEditor
 from .vendor_sysex import parse_sysex
 from .mfs_container import MfsContainer
+from .color_read_session import ColorReadSession
 
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP03')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP04')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -22,6 +25,8 @@ class App:
         self.output_name=tk.StringVar()
         self.status=tk.StringVar(value='USB-MIDI: не подключён')
         self.buttons=[]
+        self.read_session=None
+        self.last_color_snapshot=None
         self.build()
         self.refresh()
         self.root.after(70,self.poll)
@@ -76,6 +81,10 @@ class App:
         ttk.Button(host,text='Редактор настроек и подсветки — локальный профиль (без записи в устройство)',
                    command=lambda:ProfileEditor(self.root)).pack(fill='x',pady=8)
         ttk.Button(host,text='Открыть профиль .mfs — только чтение',command=self.inspect_mfs).pack(fill='x',pady=6)
+        ttk.Button(host,text='Считать цвета с MF3D — экспериментальное чтение, без записи',
+                   command=self.read_colors).pack(fill='x',pady=4)
+        ttk.Button(host,text='Сохранить считанные цвета JSON…',
+                   command=self.export_read_colors).pack(fill='x',pady=3)
         ch=ttk.Frame(host)
         ch.pack(fill='x',pady=5)
         ttk.Label(ch,text='Нотный MIDI-канал 0..15:').pack(side='left')
@@ -117,6 +126,34 @@ class App:
         view.pack(fill='both',expand=True,padx=12,pady=12)
         view.insert('1.0',description)
         view.configure(state='disabled')
+
+    def read_colors(self):
+        if self.read_session is not None and self.read_session.state=='reading':
+            self.status.set('Чтение уже выполняется');return
+        session=ColorReadSession()
+        try:
+            session.begin(time.monotonic())
+            self.midi.send_color_read_request(1)
+        except Exception as ex:
+            self.status.set('Чтение не запущено: '+str(ex));return
+        self.read_session=session;self.last_color_snapshot=None
+        self.status.set('Чтение RGB-блока 1, без записи в устройство')
+
+    def export_read_colors(self):
+        if self.last_color_snapshot is None:
+            self.status.set('Нужны два полностью считанных блока');return
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.json',
+            initialfile='MF3D_read_colors.json',filetypes=[('JSON','*.json')])
+        if not path:return
+        doc={'format':'MF3D_READ_COLORS_V1','device':'MIDI Fighter 3D',
+             'note':'Only LED buffers; NOT persistent device settings',
+             'inactive_rgb7':list(self.last_color_snapshot[1]),
+             'active_rgb7':list(self.last_color_snapshot[2])}
+        try:
+            with open(path,'w',encoding='utf-8') as stream:
+                json.dump(doc,stream,indent=2,ensure_ascii=False)
+            self.status.set('Сохранены только цвета: '+path)
+        except OSError as ex:self.status.set('Ошибка сохранения: '+str(ex))
 
     def refresh(self):
         ins,outs,err=self.midi.available()
@@ -162,6 +199,18 @@ class App:
                 if m.type=='sysex':
                     info=parse_sysex(m)
                     self.record('SYSEx: '+info.category+' / '+str(len(info.data))+' байт')
+                    if self.read_session is not None and self.read_session.state=='reading':
+                        try:
+                            next_request=self.read_session.feed(m,time.monotonic())
+                            if next_request is not None:
+                                self.midi.send_color_read_request(2)
+                                self.status.set('Блок 1 считан; запрошен блок 2')
+                            elif self.read_session.state=='complete':
+                                self.last_color_snapshot=self.read_session.snapshot()
+                                self.status.set('Считаны оба RGB-блока: 192+192 значения')
+                        except Exception as ex:
+                            self.read_session.fail(str(ex))
+                            self.status.set('Чтение остановлено: '+str(ex))
                     continue
                 if m.type=='note_on' and m.channel==self.aux_ch.get() and m.note in range(4) and m.velocity:
                     self.bank=m.note
@@ -172,6 +221,8 @@ class App:
                         self.pad=idx
                         self.repaint()
         except Exception as e:self.status.set('MIDI poll: '+str(e))
+        if self.read_session is not None and self.read_session.expire(time.monotonic()):
+            self.status.set('Тайм-аут чтения цветов; неполные данные отброшены')
         self.root.after(70,self.poll)
     def close(self):
         self.midi.disconnect()
