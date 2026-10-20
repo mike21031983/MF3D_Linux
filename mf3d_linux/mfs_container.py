@@ -62,16 +62,16 @@ class MfsContainer:
                 'Цвета нажатых кнопок' if (r.tag,r.kind)==(2,1) else
                 'Неизвестный/общий блок')
             lines.append(f'Блок {n}: tag={r.tag}, type={r.kind}, length={len(r.payload)} — {title}')
-        # Original offline importer feeds serializer bytes to ConfigWidget::sysEx
-        # with import flag set. Decode 02 01 directly, without synthesizing a SysEx.
+        # Original importer prefixes 02 01 to on-disk tag/value bytes before sysEx
+        # with import flag set. The disk serializer has no 02 01 header.
         try:
-            from .serializer_capture import decode_serializer_body
+            from .serializer_capture import decode_mfs_serializer
             from .device_profile import BY_KEY
-            decoded=decode_serializer_body(self.serializer)
+            decoded=decode_mfs_serializer(self.serializer)
         except (ValueError,TypeError):
-            lines.append('Сериализатор: заголовок 02 01 не распознан или пары повреждены; байты сохранены')
+            lines.append('Сериализатор: неверная длина пар или значения вне MIDI диапазона; байты сохранены')
         else:
-            lines.append('Основные параметры 02 01: '+str(len(decoded.pairs))+
+            lines.append('Основные параметры .mfs (без SysEx-заголовка): '+str(len(decoded.pairs))+
                          ' пар (полнота не подтверждена)')
             for tag,value in decoded.pairs:
                 names=', '.join(s.key for s in BY_KEY.values() if s.tag==tag)
