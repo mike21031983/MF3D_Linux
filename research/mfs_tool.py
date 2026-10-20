@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Offline .mfs inspection, lossless backup and restore. NO hardware interface."""
 import argparse
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from mf3d_linux.mfs_container import MfsContainer
 from mf3d_linux.mfs_backup import backup,restore
 def main():
