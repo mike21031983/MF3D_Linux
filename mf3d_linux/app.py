@@ -9,11 +9,12 @@ from .profile_editor import ProfileEditor
 from .vendor_sysex import parse_sysex
 from .mfs_container import MfsContainer
 from .color_read_session import ColorReadSession
+from .serializer_capture import PassiveSerializerCapture
 
 class App:
     def __init__(self,root):
         self.root=root
-        self.root.title('MIDI Fighter 3D — Linux Utility / CP04')
+        self.root.title('MIDI Fighter 3D — Linux Utility / CP05')
         self.root.minsize(660,570)
         self.midi=MidiBackend()
         self.bank=0
@@ -27,6 +28,8 @@ class App:
         self.buttons=[]
         self.read_session=None
         self.last_color_snapshot=None
+        self.config_capture=None
+        self.config_deadline=None
         self.build()
         self.refresh()
         self.root.after(70,self.poll)
@@ -85,6 +88,12 @@ class App:
                    command=self.read_colors).pack(fill='x',pady=4)
         ttk.Button(host,text='Сохранить считанные цвета JSON…',
                    command=self.export_read_colors).pack(fill='x',pady=3)
+        configbar=ttk.Frame(host)
+        configbar.pack(fill='x',pady=3)
+        ttk.Button(configbar,text='Считать основные настройки (только чтение)',
+                   command=self.read_main_config).pack(side='left',padx=3)
+        ttk.Button(configbar,text='Экспорт наблюдений JSON…',
+                   command=self.export_main_config).pack(side='left',padx=3)
         ch=ttk.Frame(host)
         ch.pack(fill='x',pady=5)
         ttk.Label(ch,text='Нотный MIDI-канал 0..15:').pack(side='left')
@@ -155,6 +164,33 @@ class App:
             self.status.set('Сохранены только цвета: '+path)
         except OSError as ex:self.status.set('Ошибка сохранения: '+str(ex))
 
+    def read_main_config(self):
+        if self.config_deadline is not None:
+            self.status.set('Чтение уже выполняется')
+            return
+        capture=PassiveSerializerCapture()
+        try:
+            self.midi.send_main_config_read_request()
+        except Exception as e:
+            self.status.set('Чтение не запущено: '+str(e))
+            return
+        self.config_capture=capture
+        self.config_deadline=time.monotonic()+4.0
+        self.status.set('Запрошен ответ 02 01. В память ничего не записывается')
+
+    def export_main_config(self):
+        if self.config_capture is None or not self.config_capture.frames:
+            self.status.set('Нет принятых ответов 02 01')
+            return
+        path=filedialog.asksaveasfilename(parent=self.root,defaultextension='.json',
+            initialfile='MF3D_partial_settings.json',filetypes=[('JSON','*.json')])
+        if not path:return
+        try:
+            self.config_capture.save_json(path)
+            self.status.set('Сохранены НЕПОЛНЫЕ наблюдения: '+path)
+        except OSError as e:
+            self.status.set('Ошибка экспорта: '+str(e))
+
     def refresh(self):
         ins,outs,err=self.midi.available()
         self.ins['values']=ins
@@ -199,6 +235,14 @@ class App:
                 if m.type=='sysex':
                     info=parse_sysex(m)
                     self.record('SYSEx: '+info.category+' / '+str(len(info.data))+' байт')
+                    if self.config_deadline is not None and self.config_capture is not None:
+                        try:
+                            if self.config_capture.feed(m):
+                                self.status.set('Получено '+str(len(self.config_capture.values))+
+                                    ' параметров; полнота не подтверждена')
+                        except ValueError as ex:
+                            self.config_deadline=None
+                            self.status.set('Некорректный ответ 02 01: '+str(ex))
                     if self.read_session is not None and self.read_session.state=='reading':
                         try:
                             next_request=self.read_session.feed(m,time.monotonic())
@@ -221,6 +265,13 @@ class App:
                         self.pad=idx
                         self.repaint()
         except Exception as e:self.status.set('MIDI poll: '+str(e))
+        if self.config_deadline is not None and time.monotonic()>=self.config_deadline:
+            self.config_deadline=None
+            if self.config_capture is not None and self.config_capture.frames:
+                self.status.set('Основные параметры: '+str(len(self.config_capture.values))+
+                    ' наблюдений, ПОЛНОТА НЕ ПОДТВЕРЖДЕНА')
+            else:
+                self.status.set('Тайм-аут ответа 02 01; настройки не получены')
         if self.read_session is not None and self.read_session.expire(time.monotonic()):
             self.status.set('Тайм-аут чтения цветов; неполные данные отброшены')
         self.root.after(70,self.poll)
