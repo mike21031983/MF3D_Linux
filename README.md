@@ -2,7 +2,7 @@
 
 **Цель:** полная функциональная замена фирменного MIDI Fighter Utility под Linux Mint, без Wine и Windows API.
 
-**Статус CP09 (20.10.2026): прототип, не готовая 1:1 замена.** Уже написаны Linux GUI, MIDI-матрица 4×16, ALSA/RtMidi backend, MIDI-монитор и управление LED цветом/анимациями на основе официального руководства. Пока **не проверено на реальном MIDI Fighter 3D**. Запись постоянных настроек устройства, полный GUI фирменной утилиты и прошивка пока не реализованы.
+**Статус CP10 (20.10.2026): прототип, не готовая 1:1 замена.** Уже написаны Linux GUI, MIDI-матрица 4×16, ALSA/RtMidi backend, MIDI-монитор и управление LED цветом/анимациями на основе официального руководства. Пока **не проверено на реальном MIDI Fighter 3D**. Запись постоянных настроек устройства, полный GUI фирменной утилиты и прошивка пока не реализованы.
 
 ## Запуск на Linux Mint 21.3
 
@@ -96,3 +96,12 @@ Linux-приложение теперь может **по явной коман�
 Examined previously carved x64 Windows Qt6 EXE: WINMM and Qt6 imports plus model-identification strings found, but SysEx transport behavior has **not** been proven equivalent to macOS by machine code. Added an **offline-only** trace analyzer `mf3d_linux/trace_analysis.py`, CLI `research/inspect_midi_trace.py` and synthetic tests. It correlates ID 05 / settings 02 00 / color 04 01 exchanges, reports incomplete transfers without assuming success, and never opens MIDI ports or sends device commands. Improved MIDI poll via bounded `itertools.islice` to prevent unbounded queue materialization.
 
 Working CP09 source/recovery: 79 local unit PASS, compileall PASS, Xvfb GUI startup PASS. Runtime python-rtmidi not available in the research container; REAL ALSA/MIDI communication remains untested. Actions/runners 0. Persistent device write/reset/flash unsupported. See `docs/CP09_WINDOWS_TRACE_PREP_RU.md`.
+
+
+## CP10 — единое диагностическое чтение MF3D без записи
+
+Вместо трёх разрозненных запросов добавлен **один явно запускаемый сеанс**: модель (05), основные параметры (02 00), RGB OFF (04 01 01), RGB ON (04 01 02). Настройки не могут быть прочитаны, если предварительно не подтверждены family 0003/model 0001. Неизвестные SysEx команды никогда не отправляются.
+
+Единая диагностика формирует локальный отчёт с обязательным `main_settings_complete=false`, потому что из оригинального ПО пока не восстановлен достоверный критерий окончания полной конфигурации. Для RGB требуются оба завершённых буфера по 192 значения. Сырая приватная SysEx-трасса сохраняется только после отдельного подтверждения (может содержать уникальный ID устройства); автоматической публикации нет.
+
+Модуль `mf3d_linux/read_audit.py`, тесты `tests/test_cp10_read_audit.py`, пояснения `docs/CP10_ONE_SHOT_READ_AUDIT_RU.md`. CP10: **86/86 локальных unit PASS**, `compileall` PASS, виртуальное GUI и полный fake-MIDI-сеанс PASS. Actions/runners 0. Реального аппаратного теста и операций EEPROM/firmware НЕ было; это не готовая 1:1 замена оригинального Utility.
