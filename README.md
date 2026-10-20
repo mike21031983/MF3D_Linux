@@ -2,7 +2,7 @@
 
 **Цель:** полная функциональная замена фирменного MIDI Fighter Utility под Linux Mint, без Wine и Windows API.
 
-**Статус CP08 (20.10.2026): прототип, не готовая 1:1 замена.** Уже написаны Linux GUI, MIDI-матрица 4×16, ALSA/RtMidi backend, MIDI-монитор и управление LED цветом/анимациями на основе официального руководства. Пока **не проверено на реальном MIDI Fighter 3D**. Запись постоянных настроек устройства, полный GUI фирменной утилиты и прошивка пока не реализованы.
+**Статус CP09 (20.10.2026): прототип, не готовая 1:1 замена.** Уже написаны Linux GUI, MIDI-матрица 4×16, ALSA/RtMidi backend, MIDI-монитор и управление LED цветом/анимациями на основе официального руководства. Пока **не проверено на реальном MIDI Fighter 3D**. Запись постоянных настроек устройства, полный GUI фирменной утилиты и прошивка пока не реализованы.
 
 ## Запуск на Linux Mint 21.3
 
@@ -89,3 +89,10 @@ Linux-приложение теперь может **по явной коман�
 Из оригинального macOS Utility восстановлен read-only запрос модели **F0 00 01 79 05 F7**, ответный заголовок 05 01. Фирменный JS требует family=0003, model=0001 для стандартного MIDI Fighter 3D. Новая кнопка «Определить модель» выполняет запрос только по явному нажатию. Проприетарное чтение основных параметров (02 00) и подсветки (04 01) блокируется до принятия ответа именно модели 0003:0001. После переподключения состояние сбрасывается.
 
 См. docs/CP08_DEVICE_IDENTITY_RU.md. Поля ответа пока декодированы по статическому машинному коду и требуют аппаратной проверки. В ветви 02 01 не доказан END-маркер, поэтому статус completion_unverified сохранён. Локальные CP08: **68 unit PASS**, compileall PASS, Xvfb GUI PASS; GitHub Actions 0 запусков; физический контроллер не тестировали. В persistent memory/firmware ничего не пишем.
+
+
+## CP09 — Windows Qt6 evidence and safe offline MIDI trace analysis
+
+Examined previously carved x64 Windows Qt6 EXE: WINMM and Qt6 imports plus model-identification strings found, but SysEx transport behavior has **not** been proven equivalent to macOS by machine code. Added an **offline-only** trace analyzer `mf3d_linux/trace_analysis.py`, CLI `research/inspect_midi_trace.py` and synthetic tests. It correlates ID 05 / settings 02 00 / color 04 01 exchanges, reports incomplete transfers without assuming success, and never opens MIDI ports or sends device commands. Improved MIDI poll via bounded `itertools.islice` to prevent unbounded queue materialization.
+
+Working CP09 source/recovery: 79 local unit PASS, compileall PASS, Xvfb GUI startup PASS. Runtime python-rtmidi not available in the research container; REAL ALSA/MIDI communication remains untested. Actions/runners 0. Persistent device write/reset/flash unsupported. See `docs/CP09_WINDOWS_TRACE_PREP_RU.md`.
